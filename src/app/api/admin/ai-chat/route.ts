@@ -93,7 +93,7 @@ export async function POST(request: Request) {
         model: 'gpt-4-turbo-preview',
         messages,
         temperature: 0.7,
-        max_tokens: 5000,
+        max_tokens4000,
         stream: true,
       });
 

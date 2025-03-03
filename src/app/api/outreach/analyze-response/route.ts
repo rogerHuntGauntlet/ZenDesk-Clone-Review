@@ -5,8 +5,10 @@ const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Set a reasonable timeout for the analysis
-const ANALYSIS_TIMEOUT = 120000; // 120 seconds
+// Configuration
+const ANALYSIS_TIMEOUT = 180000; // 180 seconds
+const CHUNK_SIZE = 2000; // Characters per chunk
+const MAX_RETRIES = 2;
 
 interface AnalysisResult {
     scores: {
@@ -35,20 +37,21 @@ interface AnalysisResult {
         created_at: string;
         updated_at: string;
     };
+    summary: string;
+    sentiment: 'positive' | 'neutral' | 'negative';
+    suggestions: string[];
+    keywords: string[];
 }
 
 export async function POST(request: Request) {
     try {
-        // Log the incoming request
         console.log('Analyzing response - Request received');
         
-        // Validate request body
         let body;
         try {
             body = await request.json();
-            console.log('Request body length:', body?.content?.length || 0);
+            console.log('Content length:', body?.content?.length || 0);
         } catch (e) {
-            console.error('Invalid request body:', e);
             return NextResponse.json({ 
                 error: 'Invalid request body',
                 details: e instanceof Error ? e.message : 'Unknown parsing error'
@@ -60,7 +63,6 @@ export async function POST(request: Request) {
         const { content, context } = body;
 
         if (!content) {
-            console.error('Missing content field in request body');
             return NextResponse.json({ 
                 error: 'Missing required field: content',
                 receivedFields: Object.keys(body || {})
@@ -69,32 +71,43 @@ export async function POST(request: Request) {
             });
         }
 
-        // Create a promise that rejects after the timeout
+        // For very long content, use chunked analysis
+        if (content.length > CHUNK_SIZE) {
+            console.log('Content exceeds chunk size, using chunked analysis');
+            try {
+                const analysis = await analyzeContentInChunks(content, context);
+                return NextResponse.json({ analysis });
+            } catch (error: any) {
+                console.error('Chunked analysis error:', error);
+                return NextResponse.json({ 
+                    error: 'Analysis failed',
+                    details: error.message || 'Error during chunked analysis'
+                }, { 
+                    status: 500 
+                });
+            }
+        }
+
+        // For shorter content, use regular analysis with timeout
         const timeoutPromise = new Promise((_, reject) => {
             setTimeout(() => reject(new Error('Analysis timed out')), ANALYSIS_TIMEOUT);
         });
 
-        // Create the analysis promise
-        const analysisPromise = analyzeContent(content, context);
-
-        // Race between the analysis and the timeout
         try {
-            const analysis = await Promise.race([analysisPromise, timeoutPromise]);
+            const analysis = await Promise.race([analyzeContent(content, context), timeoutPromise]);
             return NextResponse.json({ analysis });
         } catch (error: any) {
             console.error('Analysis error:', error);
             
-            // Handle timeout specifically
             if (error.message === 'Analysis timed out') {
                 return NextResponse.json({ 
                     error: 'Analysis timed out',
-                    details: `The analysis took longer than ${ANALYSIS_TIMEOUT/1000} seconds to complete. Please try with a shorter message.`
+                    details: `The analysis took longer than ${ANALYSIS_TIMEOUT/1000} seconds. Trying chunking the content.`
                 }, { 
                     status: 504 
                 });
             }
 
-            // Handle OpenAI specific errors
             if (error.code === 'insufficient_quota') {
                 return NextResponse.json({
                     error: 'OpenAI API quota exceeded',
@@ -113,7 +126,6 @@ export async function POST(request: Request) {
                 });
             }
 
-            // Generic error response
             return NextResponse.json({ 
                 error: 'Failed to analyze content',
                 details: error.message || 'Unknown error occurred'
@@ -132,10 +144,76 @@ export async function POST(request: Request) {
     }
 }
 
+async function analyzeContentInChunks(content: string, context?: any) {
+    // Split content into chunks
+    const chunks = [];
+    for (let i = 0; i < content.length; i += CHUNK_SIZE) {
+        chunks.push(content.slice(i, i + CHUNK_SIZE));
+    }
+    
+    console.log(`Split content into ${chunks.length} chunks`);
+
+    // Analyze each chunk
+    const chunkAnalyses = await Promise.all(
+        chunks.map(async (chunk, index) => {
+            for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+                try {
+                    return await analyzeContent(
+                        chunk,
+                        {
+                            ...context,
+                            chunkInfo: {
+                                index,
+                                total: chunks.length,
+                                isPartial: chunks.length > 1
+                            }
+                        }
+                    );
+                } catch (error) {
+                    if (attempt === MAX_RETRIES) throw error;
+                    // Wait before retrying
+                    await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+                }
+            }
+            throw new Error('Analysis failed after all retries');
+        })
+    );
+
+    // Filter out any undefined results and combine analyses
+    const validAnalyses = chunkAnalyses.filter((analysis): analysis is AnalysisResult => analysis !== undefined);
+    return combineAnalyses(validAnalyses);
+}
+
+function combineAnalyses(analyses: AnalysisResult[]) {
+    if (!analyses.length) return null;
+
+    // Combine summaries
+    const combinedSummary = analyses.map(a => a.summary).join('\n\n');
+
+    // Get the most common sentiment
+    const sentiments = analyses.map(a => a.sentiment);
+    const sentimentCounts = sentiments.reduce((acc, sentiment) => {
+        acc[sentiment] = (acc[sentiment] || 0) + 1;
+        return acc;
+    }, {} as Record<'positive' | 'neutral' | 'negative', number>);
+
+    const sentiment = Object.entries(sentimentCounts)
+        .sort(([, a], [, b]) => b - a)[0][0] as 'positive' | 'neutral' | 'negative';
+
+    // Combine suggestions and keywords
+    const suggestions = Array.from(new Set(analyses.flatMap(a => a.suggestions)));
+    const keywords = Array.from(new Set(analyses.flatMap(a => a.keywords))).slice(0, 5);
+
+    return {
+        summary: combinedSummary,
+        sentiment,
+        suggestions,
+        keywords
+    };
+}
+
 async function analyzeContent(content: string, context?: any) {
     try {
-        console.log('Starting OpenAI analysis with content length:', content.length);
-        
         const completion = await openai.chat.completions.create({
             model: 'gpt-4-turbo-preview',
             messages: [
@@ -154,8 +232,6 @@ ${content}`
             temperature: 0.7,
             max_tokens: 1000,
         });
-
-        console.log('OpenAI response received');
 
         const analysis = completion.choices[0]?.message?.content;
 
@@ -190,7 +266,6 @@ function determineSentiment(content: string): 'positive' | 'neutral' | 'negative
 }
 
 function extractSuggestions(analysis: string): string[] {
-    // Simple extraction of suggestions (lines starting with - or •)
     return analysis
         .split('\n')
         .filter(line => line.trim().startsWith('-') || line.trim().startsWith('•'))
@@ -198,10 +273,9 @@ function extractSuggestions(analysis: string): string[] {
 }
 
 function extractKeywords(content: string): string[] {
-    // Simple keyword extraction (words that appear more than once)
     const words = content.toLowerCase().match(/\b\w+\b/g) || [];
     const wordCount = words.reduce((acc, word) => {
-        if (word.length > 3) { // Only consider words longer than 3 characters
+        if (word.length > 3) {
             acc[word] = (acc[word] || 0) + 1;
         }
         return acc;
@@ -210,5 +284,5 @@ function extractKeywords(content: string): string[] {
     return Object.entries(wordCount)
         .filter(([_, count]) => count > 1)
         .map(([word]) => word)
-        .slice(0, 5); // Return top 5 keywords
+        .slice(0, 5);
 } 

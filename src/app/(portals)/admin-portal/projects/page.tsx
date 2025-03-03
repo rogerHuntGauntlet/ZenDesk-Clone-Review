@@ -16,6 +16,12 @@ import TeamManagement from '../components/ui/team-management/TeamManagement';
 import AdminAnalytics from '../components/ui/analytics/AdminAnalytics';
 import { useSupabase } from '../../../providers';
 
+interface User {
+  id: string;
+  role: 'client' | 'employee' | 'admin';
+  // Add other user fields as needed
+}
+
 export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [filteredProjects, setFilteredProjects] = useState<Project[]>([]);
@@ -346,8 +352,8 @@ export default function ProjectsPage() {
         return;
       }
 
-      const clients = data.filter(user => user.role === 'client');
-      const employees = data.filter(user => user.role === 'employee');
+      const clients = data.filter((user: User) => user.role === 'client');
+      const employees = data.filter((user: User) => user.role === 'employee');
       
       setMembers({ clients, employees });
     } catch (error) {
@@ -356,7 +362,13 @@ export default function ProjectsPage() {
   };
 
   useEffect(() => {
-    fetchMembers(getCurrentUser()?.id);
+    const init = async () => {
+      const user = await getCurrentUser();
+      if (user) {
+        fetchMembers(user.id);
+      }
+    };
+    init();
   }, []);
 
   if (error) {
@@ -419,7 +431,7 @@ export default function ProjectsPage() {
               primary: '#fff',
               secondary: 'rgb(239, 68, 68)',
             },
-            duration: 5000,
+            duration: 4000,
           },
           loading: {
             style: {
