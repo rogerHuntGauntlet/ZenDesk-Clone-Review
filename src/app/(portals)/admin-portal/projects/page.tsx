@@ -352,8 +352,13 @@ export default function ProjectsPage() {
         return;
       }
 
-      const clients = data.filter((user: User) => user.role === 'client');
-      const employees = data.filter((user: User) => user.role === 'employee');
+      if (!data) {
+        console.error('No data returned from supabase');
+        return;
+      }
+
+      const clients = data.filter((user: User) => user.role === 'client') || [];
+      const employees = data.filter((user: User) => user.role === 'employee') || [];
       
       setMembers({ clients, employees });
     } catch (error) {
