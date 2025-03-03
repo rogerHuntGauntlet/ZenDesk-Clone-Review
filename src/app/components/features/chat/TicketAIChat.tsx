@@ -44,13 +44,7 @@ export const TicketAIChat: React.FC<TicketAIChatProps> = ({ ticketId, onAnalysis
       setIsAnalyzing(true);
       
       // Debug log
-      console.log('Sending analysis request with payload:', {
-        content,
-        context: {
-          ticketId,
-          messageHistory: messages,
-        },
-      });
+      console.log('Starting analysis with content length:', content.length);
 
       const response = await fetch('/api/outreach/analyze-response', {
         method: 'POST',
@@ -66,16 +60,22 @@ export const TicketAIChat: React.FC<TicketAIChatProps> = ({ ticketId, onAnalysis
         }),
       });
 
-      if (!response.ok) {
-        if (response.status === 504) {
-          throw new Error('Analysis timed out. Please try with a shorter message.');
-        }
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to analyze response');
+      // Try to parse the response as JSON, even for error cases
+      let data;
+      try {
+        data = await response.json();
+      } catch (parseError) {
+        console.error('Failed to parse response:', parseError);
+        throw new Error('Invalid response format from server');
       }
 
-      const data: AnalysisResponse = await response.json();
-      
+      // Check for error responses
+      if (!response.ok) {
+        const errorMessage = data.error || 'Failed to analyze response';
+        const details = data.details ? `: ${data.details}` : '';
+        throw new Error(`${errorMessage}${details}`);
+      }
+
       if (data.error) {
         throw new Error(data.error);
       }

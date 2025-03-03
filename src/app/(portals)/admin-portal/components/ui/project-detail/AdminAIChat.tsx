@@ -210,26 +210,30 @@ export function AdminAIChat({ ticketId, onSummaryGenerated, selectedSession, onR
       try {
         while (true) {
           const { value, done } = await reader.read();
-          if (done) break;
-          
-          const chunk = decoder.decode(value);
-          console.log('Received chunk:', chunk.substring(0, 50) + '...');
-          accumulatedResponse += chunk;
-          hasReceivedContent = true;
-
-          setMessages(prev => {
-            const newMessages = [...prev];
-            const lastMessage = newMessages[newMessages.length - 1];
-            if (lastMessage && lastMessage.isStreaming) {
-              lastMessage.content = accumulatedResponse;
+          if (done) {
+            if (!hasReceivedContent) {
+              throw new Error('No response received from AI');
             }
-            return [...newMessages];
-          });
-        }
+            break;
+          }
+          
+          const chunk = decoder.decode(value, { stream: true });
+          console.log('Received chunk:', chunk.length > 50 ? chunk.substring(0, 50) + '...' : chunk);
+          
+          if (chunk) {
+            accumulatedResponse += chunk;
+            hasReceivedContent = true;
 
-        if (!hasReceivedContent) {
-          toast.error('No response received from AI');
-          throw new Error('No response received from AI');
+            // Update the streaming message
+            setMessages(prev => {
+              const newMessages = [...prev];
+              const lastMessage = newMessages[newMessages.length - 1];
+              if (lastMessage && lastMessage.isStreaming) {
+                lastMessage.content = accumulatedResponse;
+              }
+              return newMessages;
+            });
+          }
         }
 
         // Final message update
@@ -240,10 +244,10 @@ export function AdminAIChat({ ticketId, onSummaryGenerated, selectedSession, onR
             lastMessage.isStreaming = false;
             lastMessage.content = accumulatedResponse;
           }
-          return [...newMessages];
+          return newMessages;
         });
 
-        // Save the chat session with the correct role
+        // Save the chat session
         await saveChatSession([...messages, {
           role: 'assistant',
           content: accumulatedResponse,
@@ -251,6 +255,7 @@ export function AdminAIChat({ ticketId, onSummaryGenerated, selectedSession, onR
         }]);
 
       } catch (error) {
+        console.error('Streaming error:', error);
         throw error;
       } finally {
         reader.releaseLock();
@@ -258,7 +263,8 @@ export function AdminAIChat({ ticketId, onSummaryGenerated, selectedSession, onR
 
     } catch (error) {
       console.error('Error in AI chat:', error);
-      toast.error('Failed to get AI response');
+      toast.error(error instanceof Error ? error.message : 'Failed to get AI response');
+      // Remove the streaming message if there was an error
       setMessages(prev => prev.filter(msg => !msg.isStreaming));
     } finally {
       setIsProcessing(false);

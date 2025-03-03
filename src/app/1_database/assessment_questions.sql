@@ -98,7 +98,7 @@ select
         body: JSON.stringify({
           model: "gpt-4",
           prompt,
-          max_tokens: 1000
+          max_tokens: 5000
         })
       });
 

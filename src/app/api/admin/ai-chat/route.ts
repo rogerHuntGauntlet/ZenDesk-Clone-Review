@@ -93,17 +93,20 @@ export async function POST(request: Request) {
         model: 'gpt-4-turbo-preview',
         messages,
         temperature: 0.7,
-        max_tokens: 500,
+        max_tokens: 5000,
         stream: true,
       });
 
+      // Create a TransformStream for text encoding
+      const encoder = new TextEncoder();
       const stream = new ReadableStream({
         async start(controller) {
           try {
             for await (const chunk of response) {
-              const content = chunk.choices[0]?.delta?.content;
+              const content = chunk.choices[0]?.delta?.content || '';
               if (content) {
-                controller.enqueue(content);
+                // Encode and send the content
+                controller.enqueue(encoder.encode(content));
               }
             }
             controller.close();
@@ -116,10 +119,12 @@ export async function POST(request: Request) {
 
       return new Response(stream, {
         headers: {
-          'Content-Type': 'text/plain',
+          'Content-Type': 'text/plain; charset=utf-8',
           'Cache-Control': 'no-cache',
+          'Transfer-Encoding': 'chunked'
         },
       });
+
     } catch (error: any) {
       console.error('OpenAI API error:', error);
       
@@ -144,10 +149,10 @@ export async function POST(request: Request) {
       );
     }
 
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error in ai-chat:', error);
     return NextResponse.json(
-      { error: error.message || 'Failed to get AI response' },
+      { error: error instanceof Error ? error.message : 'Failed to get AI response' },
       { status: 500 }
     );
   }

@@ -6,7 +6,7 @@ const openai = new OpenAI({
 });
 
 // Set a reasonable timeout for the analysis
-const ANALYSIS_TIMEOUT = 60000; // 60 seconds
+const ANALYSIS_TIMEOUT = 120000; // 120 seconds
 
 interface AnalysisResult {
     scores: {
@@ -46,7 +46,7 @@ export async function POST(request: Request) {
         let body;
         try {
             body = await request.json();
-            console.log('Request body:', JSON.stringify(body, null, 2));
+            console.log('Request body length:', body?.content?.length || 0);
         } catch (e) {
             console.error('Invalid request body:', e);
             return NextResponse.json({ 
@@ -59,12 +59,8 @@ export async function POST(request: Request) {
 
         const { content, context } = body;
 
-        // Log the extracted content and context
-        console.log('Extracted content:', content);
-        console.log('Extracted context:', context);
-
         if (!content) {
-            console.error('Missing content field in request body:', body);
+            console.error('Missing content field in request body');
             return NextResponse.json({ 
                 error: 'Missing required field: content',
                 receivedFields: Object.keys(body || {})
@@ -86,21 +82,50 @@ export async function POST(request: Request) {
             const analysis = await Promise.race([analysisPromise, timeoutPromise]);
             return NextResponse.json({ analysis });
         } catch (error: any) {
+            console.error('Analysis error:', error);
+            
+            // Handle timeout specifically
             if (error.message === 'Analysis timed out') {
                 return NextResponse.json({ 
                     error: 'Analysis timed out',
-                    details: 'The analysis took too long to complete. Please try again with a shorter message.'
+                    details: `The analysis took longer than ${ANALYSIS_TIMEOUT/1000} seconds to complete. Please try with a shorter message.`
                 }, { 
                     status: 504 
                 });
             }
-            throw error;
+
+            // Handle OpenAI specific errors
+            if (error.code === 'insufficient_quota') {
+                return NextResponse.json({
+                    error: 'OpenAI API quota exceeded',
+                    details: 'Please try again later'
+                }, {
+                    status: 429
+                });
+            }
+
+            if (error.code === 'invalid_api_key') {
+                return NextResponse.json({
+                    error: 'Invalid OpenAI API key',
+                    details: 'Please check your API key configuration'
+                }, {
+                    status: 500
+                });
+            }
+
+            // Generic error response
+            return NextResponse.json({ 
+                error: 'Failed to analyze content',
+                details: error.message || 'Unknown error occurred'
+            }, { 
+                status: 500 
+            });
         }
     } catch (error) {
-        console.error('Analysis Error:', error);
+        console.error('Unexpected error:', error);
         return NextResponse.json({ 
-            error: 'Failed to analyze content',
-            details: error instanceof Error ? error.message : 'Unknown error'
+            error: 'Internal server error',
+            details: error instanceof Error ? error.message : 'An unexpected error occurred'
         }, { 
             status: 500 
         });
@@ -127,19 +152,14 @@ ${content}`
                 }
             ],
             temperature: 0.7,
-            max_tokens: 500,
+            max_tokens: 1000,
         });
 
-        console.log('OpenAI response received:', {
-            hasChoices: !!completion.choices,
-            firstChoice: completion.choices[0] ? 'exists' : 'missing',
-            hasContent: completion.choices[0]?.message?.content ? 'yes' : 'no'
-        });
+        console.log('OpenAI response received');
 
         const analysis = completion.choices[0]?.message?.content;
 
         if (!analysis) {
-            console.error('No analysis content in OpenAI response:', completion);
             throw new Error('No analysis generated from OpenAI');
         }
 
@@ -151,10 +171,6 @@ ${content}`
         };
     } catch (error) {
         console.error('OpenAI Analysis Error:', error);
-        // Add more context to the error
-        if (error instanceof Error) {
-            throw new Error(`OpenAI Analysis failed: ${error.message}`);
-        }
         throw error;
     }
 }

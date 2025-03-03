@@ -223,7 +223,7 @@ async function queryLLM(prompt: string): Promise<string> {
   const response = await openai.createCompletion({
     model: "gpt-4",
     prompt,
-    max_tokens: 1000,
+    max_tokens: 5000,
     temperature: 0.7
   });
   return response.choices[0].text;
