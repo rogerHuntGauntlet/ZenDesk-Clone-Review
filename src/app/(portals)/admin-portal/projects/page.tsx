@@ -19,6 +19,10 @@ import { useSupabase } from '../../../providers';
 interface User {
   id: string;
   role: 'client' | 'employee' | 'admin';
+  projects?: {
+    id: string;
+    name: string;
+  }[];
   // Add other user fields as needed
 }
 
@@ -315,7 +319,9 @@ export default function ProjectsPage() {
           const updatedProjects = await projectsResponse.json();
           setProjects(updatedProjects);
           setSelectedProjects([]); // Clear selection after successful action
-          
+          toast.success(`Successfully updated ${selectedProjects.length} project${selectedProjects.length !== 1 ? 's' : ''} to ${status}`, {
+            id: toastId
+          });
         } catch (error) {
           console.error('Error in handleBulkUpdateStatus:', error);
           const errorMessage = error instanceof Error ? error.message : 'Failed to update project status';
@@ -342,7 +348,13 @@ export default function ProjectsPage() {
     try {
       const { data, error } = await supabase
         .from('zen_users')
-        .select('*')
+        .select(`
+          *,
+          projects:user_projects(
+            id,
+            name
+          )
+        `)
         .or(`role.eq.client,role.eq.employee`);
 
       if (error) {
@@ -358,7 +370,16 @@ export default function ProjectsPage() {
       const clients = data.filter((user: User) => user.role === 'client') || [];
       const employees = data.filter((user: User) => user.role === 'employee') || [];
       
-      setMembers({ clients, employees });
+      // Ensure each user has a projects array
+      const processedData = data.map((user: User) => ({
+        ...user,
+        projects: user.projects || []
+      }));
+
+      const processedClients = processedData.filter((user: User) => user.role === 'client');
+      const processedEmployees = processedData.filter((user: User) => user.role === 'employee');
+      
+      setMembers({ clients: processedClients, employees: processedEmployees });
     } catch (error) {
       console.error('Error in fetchMembers:', error);
     }
