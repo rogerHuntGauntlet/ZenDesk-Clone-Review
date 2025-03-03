@@ -315,9 +315,7 @@ export default function ProjectsPage() {
           const updatedProjects = await projectsResponse.json();
           setProjects(updatedProjects);
           setSelectedProjects([]); // Clear selection after successful action
-          toast.success(`Successfully updated ${selectedProjects.length} project${selectedProjects.length !== 1 ? 's' : ''} to ${status}`, {
-            id: toastId
-          });
+          
         } catch (error) {
           console.error('Error in handleBulkUpdateStatus:', error);
           const errorMessage = error instanceof Error ? error.message : 'Failed to update project status';
