@@ -1,28 +1,12 @@
 import { NextResponse } from 'next/server';
-import { Client, Run } from "langsmith";
-import { LangChainTracer } from "langchain/callbacks";
 import { OpenAI } from 'openai';
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
-import { cookies } from 'next/headers';
-
-const OUTREACH_PROJECT_NAME = process.env.NEXT_PUBLIC_LANGSMITH_PROJECT_OUTREACH || "outreach-crm-ai";
-
-// Initialize LangSmith components
-const client = new Client({
-    apiUrl: process.env.NEXT_PUBLIC_LANGSMITH_ENDPOINT_OUTREACH,
-    apiKey: process.env.NEXT_PUBLIC_LANGSMITH_API_KEY_OUTREACH,
-});
-
-const tracer = new LangChainTracer({
-    projectName: OUTREACH_PROJECT_NAME,
-});
 
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
 });
 
 // Set a reasonable timeout for the analysis
-const ANALYSIS_TIMEOUT = 30000; // 30 seconds
+const ANALYSIS_TIMEOUT = 60000; // 60 seconds
 
 interface AnalysisResult {
     scores: {
@@ -125,6 +109,8 @@ export async function POST(request: Request) {
 
 async function analyzeContent(content: string, context?: any) {
     try {
+        console.log('Starting OpenAI analysis with content length:', content.length);
+        
         const completion = await openai.chat.completions.create({
             model: 'gpt-4-turbo-preview',
             messages: [
@@ -144,10 +130,17 @@ ${content}`
             max_tokens: 500,
         });
 
+        console.log('OpenAI response received:', {
+            hasChoices: !!completion.choices,
+            firstChoice: completion.choices[0] ? 'exists' : 'missing',
+            hasContent: completion.choices[0]?.message?.content ? 'yes' : 'no'
+        });
+
         const analysis = completion.choices[0]?.message?.content;
 
         if (!analysis) {
-            throw new Error('No analysis generated');
+            console.error('No analysis content in OpenAI response:', completion);
+            throw new Error('No analysis generated from OpenAI');
         }
 
         return {
@@ -158,6 +151,10 @@ ${content}`
         };
     } catch (error) {
         console.error('OpenAI Analysis Error:', error);
+        // Add more context to the error
+        if (error instanceof Error) {
+            throw new Error(`OpenAI Analysis failed: ${error.message}`);
+        }
         throw error;
     }
 }

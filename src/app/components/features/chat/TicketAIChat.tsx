@@ -99,6 +99,8 @@ export const TicketAIChat: React.FC<TicketAIChatProps> = ({ ticketId, onAnalysis
       setMessages(prev => [...prev, userMessage]);
       setInput('');
 
+      console.log('Sending message to AI:', input);
+
       // Send message to API
       const response = await fetch('/api/tickets/ai-chat', {
         method: 'POST',
@@ -112,14 +114,27 @@ export const TicketAIChat: React.FC<TicketAIChatProps> = ({ ticketId, onAnalysis
         }),
       });
 
-      const data: APIResponse = await response.json();
+      console.log('AI response status:', response.status);
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to get AI response');
+        const errorText = await response.text();
+        console.error('AI response error:', errorText);
+        throw new Error(errorText || 'Failed to get AI response');
+      }
+
+      const data: APIResponse = await response.json();
+      console.log('AI response data:', data);
+
+      if (!data) {
+        throw new Error('Empty response received from AI');
+      }
+
+      if (data.error) {
+        throw new Error(data.error);
       }
 
       if (!data.response) {
-        throw new Error('No response received from AI');
+        throw new Error('No response content received from AI');
       }
       
       // Add AI response to chat
@@ -129,7 +144,9 @@ export const TicketAIChat: React.FC<TicketAIChatProps> = ({ ticketId, onAnalysis
       // Analyze the response if it's substantial
       if (data.response.length > 50) {
         try {
+          console.log('Starting response analysis');
           const analysis = await analyzeResponse(data.response);
+          console.log('Analysis completed:', analysis);
           if (analysis && onAnalysisComplete) {
             onAnalysisComplete(analysis);
           }
