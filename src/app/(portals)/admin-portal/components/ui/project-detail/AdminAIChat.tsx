@@ -191,14 +191,21 @@ export function AdminAIChat({ ticketId, onSummaryGenerated, selectedSession, onR
       console.log('API Response status:', response.status);
       
       if (!response.ok) {
-        console.error('API Response error:', await response.text());
-        throw new Error('Failed to get AI response');
+        const errorText = await response.text();
+        console.error('API Response error:', errorText);
+        toast.error(`Failed to get AI response: ${errorText}`);
+        throw new Error(`Failed to get AI response: ${errorText}`);
       }
-      if (!response.body) throw new Error('Response body is null');
+
+      if (!response.body) {
+        toast.error('Response body is empty');
+        throw new Error('Response body is null');
+      }
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let accumulatedResponse = '';
+      let hasReceivedContent = false;
 
       try {
         while (true) {
@@ -208,6 +215,7 @@ export function AdminAIChat({ ticketId, onSummaryGenerated, selectedSession, onR
           const chunk = decoder.decode(value);
           console.log('Received chunk:', chunk.substring(0, 50) + '...');
           accumulatedResponse += chunk;
+          hasReceivedContent = true;
 
           setMessages(prev => {
             const newMessages = [...prev];
@@ -217,6 +225,11 @@ export function AdminAIChat({ ticketId, onSummaryGenerated, selectedSession, onR
             }
             return [...newMessages];
           });
+        }
+
+        if (!hasReceivedContent) {
+          toast.error('No response received from AI');
+          throw new Error('No response received from AI');
         }
 
         // Final message update
