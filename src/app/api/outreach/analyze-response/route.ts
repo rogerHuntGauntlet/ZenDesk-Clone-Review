@@ -55,13 +55,19 @@ interface AnalysisResult {
 
 export async function POST(request: Request) {
     try {
+        // Log the incoming request
+        console.log('Analyzing response - Request received');
+        
         // Validate request body
         let body;
         try {
             body = await request.json();
+            console.log('Request body:', JSON.stringify(body, null, 2));
         } catch (e) {
+            console.error('Invalid request body:', e);
             return NextResponse.json({ 
-                error: 'Invalid request body' 
+                error: 'Invalid request body',
+                details: e instanceof Error ? e.message : 'Unknown parsing error'
             }, { 
                 status: 400 
             });
@@ -69,9 +75,15 @@ export async function POST(request: Request) {
 
         const { content, context } = body;
 
+        // Log the extracted content and context
+        console.log('Extracted content:', content);
+        console.log('Extracted context:', context);
+
         if (!content) {
+            console.error('Missing content field in request body:', body);
             return NextResponse.json({ 
-                error: 'Missing required field: content' 
+                error: 'Missing required field: content',
+                receivedFields: Object.keys(body || {})
             }, { 
                 status: 400 
             });

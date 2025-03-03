@@ -42,6 +42,16 @@ export const TicketAIChat: React.FC<TicketAIChatProps> = ({ ticketId, onAnalysis
   const analyzeResponse = async (content: string) => {
     try {
       setIsAnalyzing(true);
+      
+      // Debug log
+      console.log('Sending analysis request with payload:', {
+        content,
+        context: {
+          ticketId,
+          messageHistory: messages,
+        },
+      });
+
       const response = await fetch('/api/outreach/analyze-response', {
         method: 'POST',
         headers: {

@@ -670,11 +670,36 @@ export default function TicketList({ tickets, projectId, onStatusChange, onAssig
           }
         });
 
+        // Debug log
+        console.log('Sending analysis request with full payload:', { 
+          content: emailContent,
+          context: {
+            prospect: {
+              name: selectedTicket?.assignee?.name || 'Unknown',
+              role: selectedTicket?.category || 'Unknown',
+              company: selectedTicket?.title || 'Unknown'
+            },
+            companyInfo: {
+              industry: selectedTicket?.description || 'Unknown'
+            },
+            projectContext: {
+              id: projectId,
+              title: selectedTicket?.project_id || 'Unknown',
+              description: selectedTicket?.description || 'Unknown',
+              priority: selectedTicket?.priority || 'Unknown',
+              category: selectedTicket?.category || 'Unknown',
+              status: selectedTicket?.status || 'Unknown',
+              created_at: selectedTicket?.created_at || 'Unknown',
+              updated_at: selectedTicket?.updated_at || 'Unknown'
+            }
+          }
+        });
+
         const analysisResponse = await fetch('/api/outreach/analyze-response', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
-            generatedContent: emailContent,
+            content: emailContent,
             context: {
               prospect: {
                 name: selectedTicket?.assignee?.name || 'Unknown',
