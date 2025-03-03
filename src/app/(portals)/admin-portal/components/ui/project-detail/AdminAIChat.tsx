@@ -155,6 +155,8 @@ export function AdminAIChat({ ticketId, onSummaryGenerated, selectedSession, onR
   const sendMessage = async (content: string) => {
     if (!content.trim()) return;
 
+    console.log('Starting to send message:', content);
+
     const newMessage: Message = {
       role: 'user',
       content,
@@ -166,6 +168,7 @@ export function AdminAIChat({ ticketId, onSummaryGenerated, selectedSession, onR
     setIsProcessing(true);
 
     try {
+      console.log('Making API request to /api/admin/ai-chat');
       // Add initial assistant message for streaming
       setMessages(prev => [...prev, {
         role: 'assistant',
@@ -185,7 +188,12 @@ export function AdminAIChat({ ticketId, onSummaryGenerated, selectedSession, onR
         })
       });
 
-      if (!response.ok) throw new Error('Failed to get AI response');
+      console.log('API Response status:', response.status);
+      
+      if (!response.ok) {
+        console.error('API Response error:', await response.text());
+        throw new Error('Failed to get AI response');
+      }
       if (!response.body) throw new Error('Response body is null');
 
       const reader = response.body.getReader();
@@ -198,6 +206,7 @@ export function AdminAIChat({ ticketId, onSummaryGenerated, selectedSession, onR
           if (done) break;
           
           const chunk = decoder.decode(value);
+          console.log('Received chunk:', chunk.substring(0, 50) + '...');
           accumulatedResponse += chunk;
 
           setMessages(prev => {
