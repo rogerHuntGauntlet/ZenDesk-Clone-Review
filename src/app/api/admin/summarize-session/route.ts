@@ -7,7 +7,7 @@ export const runtime = 'edge';
 export async function POST(req: Request) {
   try {
     const supabase = createRouteHandlerClient({ cookies });
-    const { ticketId, activities, recordings, comment } = await req.json();
+    const { ticketId, ticket, activities, recordings, comment } = await req.json();
 
     // Format the activities into a readable format for the AI
     const formattedActivities = activities.map((activity: any) => {
@@ -30,8 +30,15 @@ export async function POST(req: Request) {
       return description;
     }).join("\n\n");
 
-    const prompt = `Please provide a concise summary of this support session. Here are the activities:
+    const prompt = `Please provide a concise summary of this support session. Here is the context:
 
+Ticket Information:
+Title: ${ticket.title}
+Description: ${ticket.description}
+Status: ${ticket.status}
+Priority: ${ticket.priority}
+
+Session Activities:
 ${formattedActivities}
 
 ${comment ? `\nAgent's notes: ${comment}` : ''}

@@ -1059,6 +1059,7 @@ export default function WorkOnTicketModal({ isOpen, onClose, onSessionComplete, 
         onClose={() => setIsSummaryModalOpen(false)}
         onSubmit={handleSummarySubmit}
         ticketId={ticket.id}
+        ticket={ticket}
         activities={activities}
         recordings={recordings}
         comment={comment}

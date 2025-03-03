@@ -7,6 +7,7 @@ interface SummaryModalProps {
   onClose: () => void;
   onSubmit: (summary: string) => void;
   ticketId: string;
+  ticket: any;
   activities: any[];
   recordings: Array<{ url: string; type: string }>;
   comment: string;
@@ -17,6 +18,7 @@ export function SummaryModal({
   onClose,
   onSubmit,
   ticketId,
+  ticket,
   activities,
   recordings,
   comment
@@ -44,6 +46,7 @@ export function SummaryModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ticketId,
+          ticket,
           recordings,
           comment,
           activities
