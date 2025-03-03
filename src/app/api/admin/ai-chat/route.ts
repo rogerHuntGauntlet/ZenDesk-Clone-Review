@@ -69,15 +69,26 @@ export async function POST(request: Request) {
       }
     ];
 
+    if (!process.env.OPENAI_API_KEY) {
+      return NextResponse.json(
+        { error: 'OpenAI API key is not configured' },
+        { status: 500 }
+      );
+    }
+
     const openai = new OpenAI({
       apiKey: process.env.OPENAI_API_KEY,
     });
 
-    if (!process.env.OPENAI_API_KEY) {
-      throw new Error('OPENAI_API_KEY is not configured');
-    }
-
     try {
+      // Validate ticket exists
+      if (!ticket) {
+        return NextResponse.json(
+          { error: 'Ticket not found' },
+          { status: 404 }
+        );
+      }
+
       const response = await openai.chat.completions.create({
         model: 'gpt-4-turbo-preview',
         messages,
@@ -109,15 +120,34 @@ export async function POST(request: Request) {
           'Cache-Control': 'no-cache',
         },
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('OpenAI API error:', error);
-      throw error;
+      
+      // Handle specific OpenAI errors
+      if (error.code === 'invalid_api_key') {
+        return NextResponse.json(
+          { error: 'Invalid OpenAI API key' },
+          { status: 500 }
+        );
+      }
+      
+      if (error.code === 'insufficient_quota') {
+        return NextResponse.json(
+          { error: 'OpenAI API quota exceeded' },
+          { status: 500 }
+        );
+      }
+
+      return NextResponse.json(
+        { error: error.message || 'OpenAI API error occurred' },
+        { status: 500 }
+      );
     }
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error in ai-chat:', error);
     return NextResponse.json(
-      { error: 'Failed to get AI response' },
+      { error: error.message || 'Failed to get AI response' },
       { status: 500 }
     );
   }
