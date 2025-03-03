@@ -13,13 +13,28 @@ interface Project {
 
 interface ProjectMember {
   id: string;
-  user_id: string;
   role: string;
-  project_id: string;
-  project?: {
+  project: Project;
+}
+
+interface User {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  projects: ProjectMember[];
+}
+
+interface SupabaseUser {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  projects: {
     id: string;
-    name: string;
-  };
+    role: string;
+    project: Project;
+  }[];
 }
 
 interface ZenUser {
@@ -102,18 +117,44 @@ export async function GET(request: Request) {
     console.log('3. Project IDs:', projectIds);
 
     // Get all project members
-    const { data: members, error: membersError } = await supabase
-      .from('zen_project_members')
-      .select('id, user_id, role, project_id')
-      .in('project_id', projectIds);
+    const { data: users, error: usersError } = await supabase
+      .from('zen_users')
+      .select(`
+        id,
+        email,
+        name,
+        role,
+        projects:zen_project_members(
+          id,
+          role,
+          project:zen_projects(
+            id,
+            name
+          )
+        )
+      `)
+      .or('role.eq.client,role.eq.employee')
+      .in('id', projectIds);
 
-    if (membersError) {
-      console.error('Members error:', membersError);
+    if (usersError) {
+      console.error('Users error:', usersError);
       return NextResponse.json(
-        { error: `Failed to fetch members: ${membersError.message}` },
+        { error: `Failed to fetch users: ${usersError.message}` },
         { status: 500 }
       );
     }
+
+    const typedUsers = ((users || []) as any[]).map(u => ({
+      id: u.id,
+      email: u.email,
+      name: u.name,
+      role: u.role,
+      projects: (u.projects || []).map((p: any) => ({
+        id: p.id,
+        role: p.role,
+        project: p.project
+      }))
+    })) as SupabaseUser[];
 
     // Get project details
     const { data: projectDetails, error: projectDetailsError } = await supabase
@@ -133,9 +174,9 @@ export async function GET(request: Request) {
     const projectMap = new Map(projectDetails?.map(p => [p.id, p]) || []);
 
     // Attach project details to members
-    const membersWithProjects = members?.map(m => ({
-      ...m,
-      project: projectMap.get(m.project_id)
+    const membersWithProjects = typedUsers?.map(u => ({
+      ...u,
+      projects: u.projects?.map(p => p.project) || []
     })) || [];
 
     if (!membersWithProjects || membersWithProjects.length === 0) {
@@ -146,9 +187,9 @@ export async function GET(request: Request) {
     console.log('4. Found members:', membersWithProjects);
 
     // Get client details
-    const clientUserIds = membersWithProjects
-      .filter(m => m.role === 'client')
-      .map(m => m.user_id);
+    const clientUserIds = typedUsers
+      .filter(u => u.role === 'client')
+      .map(u => u.id);
 
     console.log('5. Client user IDs:', clientUserIds);
 
@@ -180,9 +221,9 @@ export async function GET(request: Request) {
     console.log('6. Found clients:', clients);
 
     // Get employee details
-    const employeeUserIds = membersWithProjects
-      .filter(m => m.role === 'employee')
-      .map(m => m.user_id);
+    const employeeUserIds = typedUsers
+      .filter(u => u.role === 'employee')
+      .map(u => u.id);
 
     console.log('7. Employee user IDs:', employeeUserIds);
 
@@ -223,12 +264,11 @@ export async function GET(request: Request) {
     for (const client of clients) {
       if (!client.zen_users?.[0]) continue;
       
-      const clientProjects = membersWithProjects
-        .filter(m => m.user_id === client.user_id && m.project)
-        .map(m => ({
-          id: m.project?.id || '',
-          name: m.project?.name || ''
-        }));
+      const user = typedUsers.find(u => u.id === client.user_id);
+      const clientProjects = user?.projects.map(p => ({
+        id: p.project.id,
+        name: p.project.name
+      })) || [];
 
       membersByRole.clients.push({
         id: client.user_id,
@@ -243,12 +283,11 @@ export async function GET(request: Request) {
     for (const employee of employees) {
       if (!employee.zen_users?.[0]) continue;
       
-      const employeeProjects = membersWithProjects
-        .filter(m => m.user_id === employee.user_id && m.project)
-        .map(m => ({
-          id: m.project?.id || '',
-          name: m.project?.name || ''
-        }));
+      const user = typedUsers.find(u => u.id === employee.user_id);
+      const employeeProjects = user?.projects.map(p => ({
+        id: p.project.id,
+        name: p.project.name
+      })) || [];
 
       membersByRole.employees.push({
         id: employee.user_id,
@@ -269,4 +308,4 @@ export async function GET(request: Request) {
       { status: 500 }
     );
   }
-} 
+}

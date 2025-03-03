@@ -94,7 +94,7 @@ Provide clear, concise responses and suggest relevant actions when appropriate.`
         model: 'gpt-4-turbo-preview',
         messages: conversationHistory,
         temperature: 0.7,
-        max_tokens4000,
+        max_tokens: 4000,
       });
 
       const aiResponse = completion.choices[0]?.message?.content;

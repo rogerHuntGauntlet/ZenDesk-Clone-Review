@@ -61,7 +61,7 @@ interface MessageGenerationService {
         }
       ],
       temperature: 0.7,
-      max_tokens4000
+      max_tokens: 4000
     });
 
     return this.processResponse(completion);
