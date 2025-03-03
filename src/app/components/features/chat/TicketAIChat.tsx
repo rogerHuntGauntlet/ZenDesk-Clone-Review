@@ -21,11 +21,63 @@ interface APIResponse {
   details?: string;
 }
 
+interface AnalysisResponse {
+  analysis?: {
+    summary: string;
+    sentiment: 'positive' | 'neutral' | 'negative';
+    suggestions: string[];
+    keywords: string[];
+  };
+  error?: string;
+  details?: string;
+}
+
 export const TicketAIChat: React.FC<TicketAIChatProps> = ({ ticketId, onAnalysisComplete }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const { toast } = useToast();
+
+  const analyzeResponse = async (content: string) => {
+    try {
+      setIsAnalyzing(true);
+      const response = await fetch('/api/outreach/analyze-response', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          content,
+          context: {
+            ticketId,
+            messageHistory: messages,
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        if (response.status === 504) {
+          throw new Error('Analysis timed out. Please try with a shorter message.');
+        }
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to analyze response');
+      }
+
+      const data: AnalysisResponse = await response.json();
+      
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      return data.analysis;
+    } catch (error) {
+      console.error('Analysis error:', error);
+      throw error;
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
 
   const handleSendMessage = async () => {
     if (!input.trim()) return;
@@ -63,6 +115,26 @@ export const TicketAIChat: React.FC<TicketAIChatProps> = ({ ticketId, onAnalysis
       // Add AI response to chat
       const aiMessage: Message = { role: 'assistant', content: data.response };
       setMessages(prev => [...prev, aiMessage]);
+
+      // Analyze the response if it's substantial
+      if (data.response.length > 50) {
+        try {
+          const analysis = await analyzeResponse(data.response);
+          if (analysis && onAnalysisComplete) {
+            onAnalysisComplete(analysis);
+          }
+        } catch (analysisError) {
+          console.error('Analysis error:', analysisError);
+          // Don't show analysis errors to the user unless they specifically requested analysis
+          if (input.toLowerCase().includes('analyze') || input.toLowerCase().includes('assessment')) {
+            toast({
+              title: 'Analysis Error',
+              description: analysisError instanceof Error ? analysisError.message : 'Failed to analyze response',
+              variant: 'destructive',
+            });
+          }
+        }
+      }
 
       // If analysis is included in response, call the callback
       if (data.analysis && onAnalysisComplete) {
@@ -127,6 +199,13 @@ export const TicketAIChat: React.FC<TicketAIChatProps> = ({ ticketId, onAnalysis
             </div>
           ))
         )}
+        {(isLoading || isAnalyzing) && (
+          <div className="flex justify-center">
+            <div className="animate-pulse text-gray-400">
+              {isAnalyzing ? 'Analyzing response...' : 'Thinking...'}
+            </div>
+          </div>
+        )}
       </div>
       <div className="flex gap-2">
         <Input
@@ -135,11 +214,11 @@ export const TicketAIChat: React.FC<TicketAIChatProps> = ({ ticketId, onAnalysis
           onKeyPress={handleKeyPress}
           placeholder="Ask about this ticket..."
           className="flex-1"
-          disabled={isLoading}
+          disabled={isLoading || isAnalyzing}
         />
         <Button
           onClick={handleSendMessage}
-          disabled={isLoading}
+          disabled={isLoading || isAnalyzing}
           className="px-4"
         >
           <PaperAirplaneIcon className="w-5 h-5" />
